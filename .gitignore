@@ -1,0 +1,5 @@
+# Data downloads and generated files
+/data/
+/tmp/
+*.log
+*.sumo.cfg.backup
