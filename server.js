@@ -1,5 +1,7 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const rateLimit = require('express-rate-limit');
 const { OAuth2Client } = require('google-auth-library');
 
 const app = express();
@@ -12,10 +14,36 @@ if (!CLIENT_ID) {
 
 const oauthClient = new OAuth2Client(CLIENT_ID);
 
+app.enable('trust proxy');
+
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(limiter);
+
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && !req.secure) {
+    const host = req.headers.host;
+    if (host) {
+      return res.redirect(307, `https://${host}${req.originalUrl}`);
+    }
+  }
+  next();
+});
+
 app.use(express.json({ limit: '1mb' }));
 
+const indexPath = path.join(__dirname, 'index.html');
+const indexTemplate = fs.readFileSync(indexPath, 'utf8');
+
 app.get('/', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  const config = JSON.stringify({ GOOGLE_CLIENT_ID: CLIENT_ID || '' });
+  const html = indexTemplate.replace('__ENV_CONFIG__', config);
+  res.type('html').send(html);
 });
 
 app.post('/api/auth/google', async (req, res) => {
@@ -39,7 +67,15 @@ app.post('/api/auth/google', async (req, res) => {
 
     const payload = ticket.getPayload();
 
-    return res.json({ payload });
+    if (!payload) {
+      throw new Error('Empty payload returned by Google');
+    }
+
+    const { name = null, email = null, picture = null, sub = null } = payload;
+
+    return res.json({
+      profile: { name, email, picture, sub },
+    });
   } catch (error) {
     console.error('Failed to verify Google ID token:', error);
     return res.status(401).json({ error: 'Invalid or expired ID token' });

@@ -3,6 +3,7 @@ services:
     name: google-login-app
     env: node
     plan: free
+    nodeVersion: 18
     buildCommand: npm install
     startCommand: npm start
     envVars:

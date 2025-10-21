@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Google Login App</title>
+    <script id="env-config" type="application/json">__ENV_CONFIG__</script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
       body {
@@ -50,7 +51,14 @@
         display: none;
       }
 
+      #loading-indicator {
+        margin-top: 1rem;
+        color: #2b6cb0;
+        display: none;
+      }
+
       .error {
+        margin-top: 1rem;
         color: #c53030;
       }
     </style>
@@ -63,60 +71,135 @@
         token will be sent to the Express backend for verification.
       </p>
 
-      <div
-        id="g_id_onload"
-        data-client_id="YOUR_GOOGLE_CLIENT_ID"
-        data-context="signin"
-        data-ux_mode="popup"
-        data-callback="handleCredentialResponse"
-      ></div>
-      <div
-        class="g_id_signin"
-        data-type="standard"
-        data-shape="rectangular"
-        data-theme="outline"
-        data-text="signin_with"
-        data-size="large"
-        data-logo_alignment="left"
-      ></div>
+      <div id="google-signin-btn"></div>
+
+      <div id="loading-indicator" role="status" aria-live="polite">
+        Verifying your Google session…
+      </div>
 
       <section id="user-info">
         <h2>Verified User</h2>
         <pre id="user-data"></pre>
       </section>
 
-      <section id="error-message" class="error"></section>
+      <section id="error-message" class="error" role="alert"></section>
     </main>
 
     <script>
-      async function handleCredentialResponse(response) {
-        const resultContainer = document.getElementById("user-info");
-        const resultPre = document.getElementById("user-data");
-        const errorContainer = document.getElementById("error-message");
+      const resultContainer = document.getElementById('user-info');
+      const resultPre = document.getElementById('user-data');
+      const errorContainer = document.getElementById('error-message');
+      const loadingIndicator = document.getElementById('loading-indicator');
 
-        resultContainer.style.display = "none";
-        errorContainer.textContent = "";
+      function setError(message) {
+        if (message) {
+          errorContainer.textContent = message;
+          errorContainer.style.display = 'block';
+        } else {
+          errorContainer.textContent = '';
+          errorContainer.style.display = 'none';
+        }
+      }
+
+      function hideLoading() {
+        loadingIndicator.style.display = 'none';
+      }
+
+      async function handleCredentialResponse(response) {
+        resultContainer.style.display = 'none';
+        resultPre.textContent = '';
+        setError('');
+
+        if (!response || !response.credential) {
+          setError('Google did not return a credential. Please try again.');
+          return;
+        }
+
+        loadingIndicator.style.display = 'block';
 
         try {
-          const res = await fetch("/api/auth/google", {
-            method: "POST",
+          const res = await fetch('/api/auth/google', {
+            method: 'POST',
             headers: {
-              "Content-Type": "application/json",
+              'Content-Type': 'application/json',
             },
             body: JSON.stringify({ credential: response.credential }),
           });
 
+          const data = await res.json();
+
           if (!res.ok) {
-            const errorBody = await res.json();
-            throw new Error(errorBody.error || "Failed to verify token");
+            const message =
+              data?.error === 'Invalid or expired ID token'
+                ? 'Your Google session is invalid or has expired. Please sign in again.'
+                : data?.error || 'Failed to verify your Google credential.';
+            throw new Error(message);
           }
 
-          const data = await res.json();
-          resultPre.textContent = JSON.stringify(data.payload, null, 2);
-          resultContainer.style.display = "block";
+          resultPre.textContent = JSON.stringify(data.profile, null, 2);
+          resultContainer.style.display = 'block';
         } catch (err) {
-          errorContainer.textContent = err.message;
+          console.error(err);
+          setError(err.message);
+        } finally {
+          hideLoading();
         }
+      }
+
+      (function initClientId() {
+        try {
+          const configEl = document.getElementById('env-config');
+          if (!configEl) {
+            throw new Error('Environment configuration was not injected.');
+          }
+
+          const config = JSON.parse(configEl.textContent || '{}');
+          if (config.GOOGLE_CLIENT_ID) {
+            window.GOOGLE_CLIENT_ID = config.GOOGLE_CLIENT_ID;
+          } else {
+            setError(
+              'GOOGLE_CLIENT_ID is not configured. Set the environment variable on the server before trying again.'
+            );
+          }
+        } catch (error) {
+          console.error('Failed to read environment configuration:', error);
+          setError(
+            'Unable to load configuration from the server. Please check your deployment settings.'
+          );
+        }
+      })();
+
+      function initializeGoogleSignIn() {
+        if (!window.GOOGLE_CLIENT_ID) {
+          return;
+        }
+
+        if (!(window.google && window.google.accounts && window.google.accounts.id)) {
+          setError('Google Identity Services failed to load. Please refresh and try again.');
+          return;
+        }
+
+        window.google.accounts.id.initialize({
+          client_id: window.GOOGLE_CLIENT_ID,
+          callback: handleCredentialResponse,
+          ux_mode: 'popup',
+          context: 'signin',
+        });
+
+        window.google.accounts.id.renderButton(document.getElementById('google-signin-btn'), {
+          type: 'standard',
+          shape: 'rectangular',
+          theme: 'outline',
+          text: 'signin_with',
+          size: 'large',
+          logo_alignment: 'left',
+        });
+      }
+
+      if (document.readyState === 'complete') {
+        initializeGoogleSignIn();
+      } else {
+        window.addEventListener('load', initializeGoogleSignIn);
       }
     </script>
   </body>
