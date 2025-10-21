@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Google Login App</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f6f8fa;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        min-height: 100vh;
+        margin: 0;
+      }
+
+      main {
+        background: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+        padding: 2.5rem 3rem;
+        max-width: 420px;
+        width: 100%;
+        text-align: center;
+      }
+
+      h1 {
+        margin-bottom: 1rem;
+        color: #1a202c;
+      }
+
+      p {
+        color: #4a5568;
+        line-height: 1.5;
+      }
+
+      pre {
+        background: #edf2f7;
+        border-radius: 8px;
+        padding: 1rem;
+        text-align: left;
+        overflow-x: auto;
+      }
+
+      #user-info {
+        margin-top: 1.5rem;
+        display: none;
+      }
+
+      .error {
+        color: #c53030;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Google Sign-In Demo</h1>
+      <p>
+        Click the button below to sign in with Google. After you authorize, your ID
+        token will be sent to the Express backend for verification.
+      </p>
+
+      <div
+        id="g_id_onload"
+        data-client_id="YOUR_GOOGLE_CLIENT_ID"
+        data-context="signin"
+        data-ux_mode="popup"
+        data-callback="handleCredentialResponse"
+      ></div>
+      <div
+        class="g_id_signin"
+        data-type="standard"
+        data-shape="rectangular"
+        data-theme="outline"
+        data-text="signin_with"
+        data-size="large"
+        data-logo_alignment="left"
+      ></div>
+
+      <section id="user-info">
+        <h2>Verified User</h2>
+        <pre id="user-data"></pre>
+      </section>
+
+      <section id="error-message" class="error"></section>
+    </main>
+
+    <script>
+      async function handleCredentialResponse(response) {
+        const resultContainer = document.getElementById("user-info");
+        const resultPre = document.getElementById("user-data");
+        const errorContainer = document.getElementById("error-message");
+
+        resultContainer.style.display = "none";
+        errorContainer.textContent = "";
+
+        try {
+          const res = await fetch("/api/auth/google", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ credential: response.credential }),
+          });
+
+          if (!res.ok) {
+            const errorBody = await res.json();
+            throw new Error(errorBody.error || "Failed to verify token");
+          }
+
+          const data = await res.json();
+          resultPre.textContent = JSON.stringify(data.payload, null, 2);
+          resultContainer.style.display = "block";
+        } catch (err) {
+          errorContainer.textContent = err.message;
+        }
+      }
+    </script>
+  </body>
+</html>
